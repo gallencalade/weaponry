@@ -5,7 +5,7 @@
 #include <mutex>
 #include <condition_variable>
 
-template <typename T, int N, typename CONTAINER = std::deque<T>>
+template <typename T, int N = 1, typename CONTAINER = std::deque<T>>
 class Atomque {
  public:
   Atomque() {
@@ -31,56 +31,63 @@ class Atomque {
   }
 
   void push_back(const T& t) {
+    {
     std::unique_lock<std::mutex> lk(mutex_);
     cond_var_any_.wait(lk, [this]{ return size() < N; });
     que_.push_back(t);
+    }
+    cond_var_any_.notify_all();
   }
 
   int try_push_back(const T& t) {
     if (mutex_.try_lock()) {
-      if (que_.size() < N) {
-        que_.push_back(t);
+      if (N == que_.size()) {
         mutex_.unlock();
-        return 0;
+        return N;
       }
+
+      que_.push_back(t);
       mutex_.unlock();
-      return N;
+      cond_var_any_.notify_all();
+      return 0;
     }
 
     return -1;
   }
 
   int push_back_until(const T& t, const std::chrono::milliseconds& ms) {
+    {
     std::unique_lock<std::mutex> lk(mutex_);
     if (std::cv_status::timeout == cond_var_any_.wait_for(lk, ms)) {
       return -1;
     }
 
-    if (que_.size() < N) {
-      que_.push_back(t);
-      return 0;
+    if (N == que_.size()) {
+      return N;
     }
 
-    return N;
+    que_.push_back(t);
+    }
+    cond_var_any_.notify_all();
+
+    return 0;
   }
 
-  T pop_back() {
+  void squeese_back(const T& t) {
     std::unique_lock<std::mutex> lk(mutex_);
-    cond_var_any_.wait(lk, !empty());
-    T t = que_.back();
-    que_.pop_back();
+    if (N == que_.size()) {
+      que_.pop_front();
+    }
 
-    return t;
+    que_.push_back(t);
   }
 
-  int try_pop_back(T& t) {
+  int try_squeese_back(const T& t) {
     if (mutex_.try_lock()) {
-      if (empty()) {
-        mutex_.unlock();
-        return N;
+      if (N == que_.size()) {
+        que_.pop_front();
       }
-      t = que_.back();
-      que_.pop_back();
+      que_.push_back(t);
       mutex_.unlock();
       return 0;
     }
@@ -88,7 +95,27 @@ class Atomque {
     return -1;
   }
 
-  int pop_back_until(T& t, const std::chrono::milliseconds& ms) {
+  T front() {
+    std::unique_lock<std::mutex> lk(mutex_);
+    cond_var_any_.wait(lk, !empty());
+    return que_.front();
+  }
+
+  int try_front(T& t) {
+    if (mutex_.try_lock()) {
+      if (empty()) {
+        mutex_.unlock();
+        return N;
+      }
+      t = que_.front();
+      mutex_.unlock();
+      return 0;
+    }
+
+    return -1;
+  }
+
+  int front_util(T& t, const std::chrono::milliseconds& ms) {
     std::unique_lock<std::mutex> lk(mutex_);
     if (std::cv_status::timeout == cond_var_any_.wait_for(lk, ms)) {
       return -1;
@@ -96,51 +123,20 @@ class Atomque {
     if (empty()) {
       return N;
     }
-    t = que_.back();
-    que_.pop_back();
+    t = que_.front();
 
     return 0;
   }
 
-  void push_front(const T& t) {
-    std::unique_lock<std::mutex> lk(mutex_);
-    cond_var_any_.wait(lk, [this]{ return size() < N; });
-    que_.push_front(t);
-  }
-
-  int try_push_front(const T& t) {
-    if (mutex_.try_lock()) {
-      if (que_.size() < N) {
-        que_.push_front(t);
-        mutex_.unlock();
-        return 0;
-      }
-      mutex_.unlock();
-      return N;
-    }
-
-    return -1;
-  }
-
-  int push_front_until(const T& t, std::chrono::milliseconds& ms) {
-    std::unique_lock<std::mutex> lk(mutex_);
-    if (std::cv_status::timeout == cond_var_any_.wait_for(lk, ms)) {
-      return -1;
-    }
-
-    if (que_.size() < N) {
-      que_.push_front(t);
-      return 0;
-    }
-
-    return N;
-  }
-
   T pop_front() {
+    T t;
+    {
     std::unique_lock<std::mutex> lk(mutex_);
     cond_var_any_.wait(lk, !empty());
-    T t = que_.front();
+    t = que_.front();
     que_.pop_front();
+    }
+    cond_var_any_.notify_all();
 
     return t;
   }
@@ -154,6 +150,8 @@ class Atomque {
       t = que_.front();
       que_.pop_front();
       mutex_.unlock();
+      cond_var_any_.notify_all();
+
       return 0;
     }
 
@@ -161,6 +159,7 @@ class Atomque {
   }
 
   int pop_front_until(T& t, std::chrono::milliseconds& ms) {
+    {
     std::unique_lock<std::mutex> lk(mutex_);
     if (std::cv_status::timeout == cond_var_any_.wait_for(lk, ms)) {
       return -1;
@@ -170,6 +169,8 @@ class Atomque {
     }
     t = que_.front();
     que_.pop_front();
+    }
+    cond_var_any_.notify_all();
 
     return 0;
   }
