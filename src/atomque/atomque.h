@@ -5,6 +5,8 @@
 #include <mutex>
 #include <condition_variable>
 
+namespace weaponry {
+
 template <typename T, int N = 1, typename CONTAINER = std::deque<T>>
 class Atomque {
  public:
@@ -180,5 +182,7 @@ class Atomque {
   std::condition_variable_any cond_var_any_;
   CONTAINER que_;
 };
+
+}   // namespace
 
 #endif    // WEAPONRY_SRC_ATOMQUE_H
