@@ -10,10 +10,7 @@ namespace weaponry {
 template <typename T, int N = 1, typename CONTAINER = std::deque<T>>
 class Atomque {
  public:
-  Atomque() {
-    que_.resize(N);
-  }
-
+  Atomque() = default;
   ~Atomque() = default;
 
  public:
@@ -35,7 +32,9 @@ class Atomque {
   void push_back(const T& t) {
     {
     std::unique_lock<std::mutex> lk(mutex_);
-    cond_var_any_.wait(lk, [this]{ return size() < N; });
+    if (N == que_.size()) {
+      cond_var_any_.wait(lk, [this]{ return que_.size() < N; });
+    }
     que_.push_back(t);
     }
     cond_var_any_.notify_all();
@@ -57,7 +56,7 @@ class Atomque {
     return -1;
   }
 
-  int push_back_until(const T& t, const std::chrono::milliseconds& ms) {
+  int push_back_until(const T& t, const std::chrono::milliseconds ms) {
     {
     std::unique_lock<std::mutex> lk(mutex_);
     if (std::cv_status::timeout == cond_var_any_.wait_for(lk, ms)) {
@@ -99,13 +98,13 @@ class Atomque {
 
   T front() {
     std::unique_lock<std::mutex> lk(mutex_);
-    cond_var_any_.wait(lk, !empty());
+    cond_var_any_.wait(lk, [this]{ return !que_.empty(); });
     return que_.front();
   }
 
   int try_front(T& t) {
     if (mutex_.try_lock()) {
-      if (empty()) {
+      if (que_.empty()) {
         mutex_.unlock();
         return N;
       }
@@ -117,12 +116,12 @@ class Atomque {
     return -1;
   }
 
-  int front_util(T& t, const std::chrono::milliseconds& ms) {
+  int front_util(T& t, const std::chrono::milliseconds ms) {
     std::unique_lock<std::mutex> lk(mutex_);
     if (std::cv_status::timeout == cond_var_any_.wait_for(lk, ms)) {
       return -1;
     }
-    if (empty()) {
+    if (que_.empty()) {
       return N;
     }
     t = que_.front();
@@ -134,7 +133,9 @@ class Atomque {
     T t;
     {
     std::unique_lock<std::mutex> lk(mutex_);
-    cond_var_any_.wait(lk, !empty());
+    if (que_.empty()) {
+      cond_var_any_.wait(lk, [this]{ return !que_.empty(); });
+    }
     t = que_.front();
     que_.pop_front();
     }
@@ -145,7 +146,7 @@ class Atomque {
 
   int try_pop_front(T& t) {
     if (mutex_.try_lock()) {
-      if (empty()) {
+      if (que_.empty()) {
         mutex_.unlock();
         return N;
       }
@@ -160,13 +161,13 @@ class Atomque {
     return -1;
   }
 
-  int pop_front_until(T& t, std::chrono::milliseconds& ms) {
+  int pop_front_until(T& t, std::chrono::milliseconds ms) {
     {
     std::unique_lock<std::mutex> lk(mutex_);
     if (std::cv_status::timeout == cond_var_any_.wait_for(lk, ms)) {
       return -1;
     }
-    if (empty()) {
+    if (que_.empty()) {
       return N;
     }
     t = que_.front();
