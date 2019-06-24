@@ -9,7 +9,7 @@ int main() {
   Atomque<int> atomque;
   std::thread thd_size([&]{
     while (true) {
-      std::cout << "thd_size: " << atomque.size() << std::endl;  
+      std::cout << "thd_size: " << atomque.size() << std::endl;
     }
   });
   thd_size.detach();
@@ -76,13 +76,17 @@ int main() {
   });
   thd_pop_front.detach();
   std::thread thd_try_pop_front([&]{
-    int a = 0;
-    atomque.try_pop_front(a);
+    while (true) {
+      int a = 0;
+      atomque.try_pop_front(a);
+    }
   });
   thd_try_pop_front.detach();
   std::thread thd_pop_front_util([&]{
-    int a = 0;
-    atomque.pop_front_until(a, std::chrono::milliseconds(1));
+    while (true) {
+      int a = 0;
+      atomque.pop_front_until(a, std::chrono::milliseconds(1));
+    }
   });
   thd_pop_front_util.join();
 }
