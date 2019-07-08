@@ -6,7 +6,7 @@
 using weaponry::Atomque;
 
 int main() {
-  Atomque<int> atomque;
+  Atomque<int, 4> atomque;
   std::thread thd_size([&]{
     while (true) {
       std::cout << "thd_size: " << atomque.size() << std::endl;
