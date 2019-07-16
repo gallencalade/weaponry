@@ -5,13 +5,15 @@
 #include <mutex>
 #include <condition_variable>
 
-namespace weaponry {
+namespace arcternsdk {
 
 template <typename T, int N = 1, typename CONTAINER = std::deque<T>>
 class Atomque {
  public:
   Atomque() = default;
-  ~Atomque() = default;
+  ~Atomque() {
+    que_.clear();
+  }
 
  public:
   size_t size() {
@@ -22,6 +24,7 @@ class Atomque {
   void clear() {
     std::unique_lock<std::mutex> lk(mutex_);
     que_.clear();
+    cond_var_any_inable_.notify_all();
   }
 
   bool empty() {
@@ -33,23 +36,24 @@ class Atomque {
     {
     std::unique_lock<std::mutex> lk(mutex_);
     if (N == que_.size()) {
-      cond_var_any_.wait(lk, [this]{ return que_.size() < N; });
+      cond_var_any_inable_.wait(lk, [this]{ return que_.size() < N; });
     }
     que_.push_back(t);
     }
-    cond_var_any_.notify_all();
+    cond_var_any_outable_.notify_all();
   }
 
   int try_push_back(const T& t) {
     if (mutex_.try_lock()) {
       if (N == que_.size()) {
         mutex_.unlock();
+        cond_var_any_outable_.notify_all();
         return N;
       }
 
       que_.push_back(t);
       mutex_.unlock();
-      cond_var_any_.notify_all();
+      cond_var_any_outable_.notify_all();
       return 0;
     }
 
@@ -59,17 +63,18 @@ class Atomque {
   int push_back_until(const T& t, const std::chrono::milliseconds ms) {
     {
     std::unique_lock<std::mutex> lk(mutex_);
-    if (std::cv_status::timeout == cond_var_any_.wait_for(lk, ms)) {
+    if (std::cv_status::timeout == cond_var_any_inable_.wait_for(lk, ms)) {
       return -1;
     }
 
     if (N == que_.size()) {
+      cond_var_any_outable_.notify_all();
       return N;
     }
 
     que_.push_back(t);
     }
-    cond_var_any_.notify_all();
+    cond_var_any_outable_.notify_all();
 
     return 0;
   }
@@ -81,6 +86,7 @@ class Atomque {
     }
 
     que_.push_back(t);
+    cond_var_any_outable_.notify_all();
   }
 
   int try_squeese_back(const T& t) {
@@ -90,6 +96,7 @@ class Atomque {
       }
       que_.push_back(t);
       mutex_.unlock();
+      cond_var_any_outable_.notify_all();
       return 0;
     }
 
@@ -98,7 +105,7 @@ class Atomque {
 
   T front() {
     std::unique_lock<std::mutex> lk(mutex_);
-    cond_var_any_.wait(lk, [this]{ return !que_.empty(); });
+    cond_var_any_outable_.wait(lk, [this]{ return !que_.empty(); });
     return que_.front();
   }
 
@@ -118,7 +125,7 @@ class Atomque {
 
   int front_util(T& t, const std::chrono::milliseconds ms) {
     std::unique_lock<std::mutex> lk(mutex_);
-    if (std::cv_status::timeout == cond_var_any_.wait_for(lk, ms)) {
+    if (std::cv_status::timeout == cond_var_any_outable_.wait_for(lk, ms)) {
       return -1;
     }
     if (que_.empty()) {
@@ -134,12 +141,12 @@ class Atomque {
     {
     std::unique_lock<std::mutex> lk(mutex_);
     if (que_.empty()) {
-      cond_var_any_.wait(lk, [this]{ return !que_.empty(); });
+      cond_var_any_outable_.wait(lk, [this]{ return !que_.empty(); });
     }
     t = que_.front();
     que_.pop_front();
     }
-    cond_var_any_.notify_all();
+    cond_var_any_inable_.notify_all();
 
     return t;
   }
@@ -148,12 +155,13 @@ class Atomque {
     if (mutex_.try_lock()) {
       if (que_.empty()) {
         mutex_.unlock();
+        cond_var_any_inable_.notify_all();
         return N;
       }
       t = que_.front();
       que_.pop_front();
       mutex_.unlock();
-      cond_var_any_.notify_all();
+      cond_var_any_inable_.notify_all();
 
       return 0;
     }
@@ -164,23 +172,25 @@ class Atomque {
   int pop_front_until(T& t, std::chrono::milliseconds ms) {
     {
     std::unique_lock<std::mutex> lk(mutex_);
-    if (std::cv_status::timeout == cond_var_any_.wait_for(lk, ms)) {
+    if (std::cv_status::timeout == cond_var_any_outable_.wait_for(lk, ms)) {
       return -1;
     }
     if (que_.empty()) {
+      cond_var_any_inable_.notify_all();
       return N;
     }
     t = que_.front();
     que_.pop_front();
     }
-    cond_var_any_.notify_all();
+    cond_var_any_inable_.notify_all();
 
     return 0;
   }
 
  private:
   std::mutex mutex_;
-  std::condition_variable_any cond_var_any_;
+  std::condition_variable_any cond_var_any_inable_;
+  std::condition_variable_any cond_var_any_outable_;
   CONTAINER que_;
 };
 
