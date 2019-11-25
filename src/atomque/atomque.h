@@ -81,6 +81,7 @@ class Atomque {
     }
 
     que_.push_back(t);
+    cond_var_any_.notify_all();
   }
 
   int try_squeese_back(const T& t) {
@@ -98,8 +99,10 @@ class Atomque {
 
   T front() {
     std::unique_lock<std::mutex> lk(mutex_);
-    cond_var_any_.wait(lk, [this]{ return !que_.empty(); });
-    return que_.front();
+    if (que_.empty()) {
+      cond_var_any_.wait(lk, [this]{ return !que_.empty(); });
+    }
+    return T(que_.front());
   }
 
   int try_front(T& t) {
